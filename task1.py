@@ -1,5 +1,5 @@
-# No external libraries are allowed to be imported in this file
 import random
+
 
 def mock_datastream():
     """This function is a mock datastream generator. It yields transactions one by one.
@@ -11,6 +11,7 @@ def mock_datastream():
     """
     for _ in range(10_000):
         yield random.gauss(10, 100) * (1 + 0.0005)
+
 
 def reservoir_sampling(k, datastream):
     """This function should contain the code for the reservoir sampling algorithm.
@@ -27,17 +28,15 @@ def reservoir_sampling(k, datastream):
     """
     sample = []
     for index, transaction in enumerate(datastream()):
-        # transaction, contains the current transaction from the stream
-        # Note that it is NOT allowed to store the whole datastream in memory
-        # Note that the sample array size should not exceed k
-
-        # BEGIN IMPLEMENTATION
-
-        # END IMPLEMENTATION
-
+        if index < k:
+            sample.append(transaction)
+        else:
+            reservoir_index = random.randint(0, index)
+            if reservoir_index < k:
+                sample[reservoir_index] = transaction
     return sample
 
+
 if __name__ == "__main__":
-    # You can use this main section for testing the reservoir_sampling function
     sample = reservoir_sampling(5000, mock_datastream)
     print(sample)
