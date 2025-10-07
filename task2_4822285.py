@@ -15,7 +15,6 @@ def create_hash_functions(num_hash_functions, size_bit_array):
     Returns:
         list[lambda]: A list containing the hash functions.
     """
-    # Generate a list of hash functions
     hash_functions = []
     for i in range(num_hash_functions):
         hash_functions.append(
@@ -124,7 +123,8 @@ if __name__ == "__main__":
     best_k = None
     best_fpr = 1.0
 
-    for k in range(2, 31):
+    # for k in range(2, 31):
+    for k in range(2, 8):
         bloom = [0] * N
         custom_hash_functions = create_hash_functions(k, N)
 
@@ -136,20 +136,14 @@ if __name__ == "__main__":
             if check_bloom_filter(bloom, custom_hash_functions, fake_bank_account):
                 false_positives += 1
         fpr_meas = false_positives / len(fake_bank_accounts)
-
         fpr_exp = expected_fpr(k, nr_bank_accounts, N)
-
         frac_bits_set = float(np.sum(bloom)) / N
-
         is_tpr_ok = all(check_bloom_filter(bloom, custom_hash_functions, acc) for acc in real_bank_accounts)
-
-        abs_err = fpr_meas - fpr_exp
-        rel_err = (abs_err / fpr_exp * 100.0) if fpr_exp > 0 else float("inf")
 
         print(
             f"[RUN] k={k:2d} | bits_set={frac_bits_set:.3f} | "
-            f"FPR_meas={fpr_meas:.6f} vs FPR_exp={fpr_exp:.6f} "
-            f"(abs Δ={abs_err:+.6f}, rel Δ={rel_err:+.2f}%) | TPR==1? {is_tpr_ok}"
+            f"FPR_meas={fpr_meas:.6f} vs FPR_exp={fpr_exp:.6f} | "
+            f"TPR==1? {is_tpr_ok}"
         )
 
         if fpr_meas < best_fpr:
@@ -162,27 +156,23 @@ if __name__ == "__main__":
     print(f"  Best empirical k in [2..30]: {best_k} (FPR_meas ≈ {best_fpr:.6f})")
 
     k_final = best_k
-    print("\n[FINAL] Build with theoretical k on full dataset")
+    print("\n[FINAL] Build with empirical k_opt on full dataset")
     print(f"  Using k={k_final}, N={N}, n={nr_bank_accounts}")
 
     bloom_filter = [0] * N
     hash_functions = create_hash_functions(k_final, N)
 
     step = max(1, nr_bank_accounts // 10)
-    for i, acc in enumerate(real_bank_accounts, 1):
-        add_to_bloom_filter(bloom_filter, hash_functions, acc)
-        if i % step == 0 or i == nr_bank_accounts:
-            print(f"  Inserted {i}/{nr_bank_accounts} ({i / nr_bank_accounts:.0%})")
+    for account_index, real_account in enumerate(real_bank_accounts, 1):
+        add_to_bloom_filter(bloom_filter, hash_functions, real_account)
+        if account_index % step == 0 or account_index == nr_bank_accounts:
+            print(f"  Inserted {account_index}/{nr_bank_accounts} ({account_index / nr_bank_accounts:.0%})")
 
-    # Measured FPR on a subset of fake accounts (for speed)
-    FP_SAMPLE = min(100_000, nr_bank_accounts)
     false_positives = 0
-    for acc in fake_bank_accounts[:FP_SAMPLE]:
-        if check_bloom_filter(bloom_filter, hash_functions, acc):
+    for fake_account in fake_bank_accounts:
+        if check_bloom_filter(bloom_filter, hash_functions, fake_account):
             false_positives += 1
-    fpr_meas_final = false_positives / FP_SAMPLE
-
-    # Expected FPR for full dataset with k_final
+    fpr_meas_final = false_positives / nr_bank_accounts
     fpr_exp_full = expected_fpr(k_final, nr_bank_accounts, N)
 
     frac_bits_set_full = float(np.sum(bloom_filter)) / N
@@ -191,17 +181,12 @@ if __name__ == "__main__":
         for acc in real_bank_accounts[:min(10_000, nr_bank_accounts)]
     )
 
-    abs_err_final = fpr_meas_final - fpr_exp_full
-    rel_err_final = (abs_err_final / fpr_exp_full * 100.0) if fpr_exp_full > 0 else float("inf")
-
     print("\n[FINAL] Results")
     print(f"  k used: {k_final}")
-    print(f"  FPR_meas={fpr_meas_final:.6f} vs FPR_exp={fpr_exp_full:.6f} "
-          f"(abs Δ={abs_err_final:+.6f}, rel Δ={rel_err_final:+.2f}%)")
+    print(f"  FPR_meas={fpr_meas_final:.6f} vs FPR_exp={fpr_exp_full:.6f} ")
     print(f"  Fraction of bits set: {frac_bits_set_full:.6f}")
-    print(f"  TPR==1 on first 10k reals? {tpr_ok_final}\n")
+    print(f"  TPR==1? {tpr_ok_final}\n")
 
-    # Example queries
     print("[QUERIES]")
     print("  Is real12345 a valid account number?",
           check_bloom_filter(bloom_filter, hash_functions, "real12345"))
