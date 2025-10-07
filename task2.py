@@ -3,6 +3,7 @@ from hashlib import sha256
 import numpy as np
 import functools
 
+
 def create_hash_functions(num_hash_functions, size_bit_array):
     """Create a list of runnable hash functions.
     It is important to use lambda functions to create the hash functions.
@@ -17,14 +18,12 @@ def create_hash_functions(num_hash_functions, size_bit_array):
     # Generate a list of hash functions
     hash_functions = []
     for i in range(num_hash_functions):
-        # Create a lambda function that hashes the input
-        # note that this should be a unique hash function for all
-
-        # BEGIN IMPLEMENTATION
-
-        # END IMPLEMENTATION
-
+        hash_functions.append(
+            (lambda index=i: (
+                lambda x: int(sha256(f"hash_function_index_{index}_bank_account_{x}".encode()).hexdigest(),
+                              16) % size_bit_array))())
     return hash_functions
+
 
 def add_to_bloom_filter(bloom_filter, hash_functions, bank_account):
     """This function should set the bits in the bloom filter to 1 for each 
@@ -38,12 +37,10 @@ def add_to_bloom_filter(bloom_filter, hash_functions, bank_account):
     Returns:
         list[int]: The updated bloom filter.
     """
-
-    # BEGIN IMPLEMENTATION
-
-    # END IMPLEMENTATION
-
+    for custom_hash in hash_functions:
+        bloom_filter[custom_hash(bank_account)] = 1
     return bloom_filter
+
 
 def check_bloom_filter(bloom_filter, hash_functions, bank_account):
     """This function should check if the bank account is in the bloom filter.
@@ -57,38 +54,158 @@ def check_bloom_filter(bloom_filter, hash_functions, bank_account):
         bool: True if the bank account is in the bloom filter, False otherwise.
     """
 
-    # BEGIN IMPLEMENTATION
-
-    # END IMPLEMENTATION
-
+    for custom_hash in hash_functions:
+        if bloom_filter[custom_hash(bank_account)] != 1:
+            return False
     return True
 
+
+# if __name__ == '__main__':
+#     hash_functions = create_hash_functions(3, 10)
+#     print([f("abc") for f in hash_functions])
+
+# if __name__ == "__main__":
+#     # This section can be used to debug your submission
+#
+#     nr_bank_accounts = 100_000
+#     # nr_bank_accounts = 10
+#
+#     # Create a list of legal bank account numbers
+#     real_bank_accounts = ["real" + str(i) for i in range(nr_bank_accounts)]
+#
+#     # Set up the Bloom filter as an array 8 times as big as the number of bank accounts
+#     bloom_filter = [0] * 8 * nr_bank_accounts
+#     # Experiment with 2 hash functions (try raising it to 30)
+#     # hash_functions = create_hash_functions(2, 8*nr_bank_accounts)
+#     hash_functions = create_hash_functions(2, 8 * nr_bank_accounts)
+#     # Enter all valid account numbers
+#     for account in real_bank_accounts:
+#         add_to_bloom_filter(bloom_filter, hash_functions, account)
+#
+#     # print(bloom_filter)
+#
+#     # Calculate the false positive rate
+#     fake_bank_accounts = ["fake" + str(i) for i in range(nr_bank_accounts)]
+#     false_positives = 0
+#     for fake_account in fake_bank_accounts:
+#         if check_bloom_filter(bloom_filter, hash_functions, fake_account):
+#             false_positives += 1
+#     print(f"False positive rate: {false_positives / nr_bank_accounts}")
+#
+#     print("Fraction of bits set: ", np.sum(bloom_filter) / (nr_bank_accounts * 8))
+#
+#     print("Is real12345 a valid account number?", check_bloom_filter(bloom_filter, hash_functions, "real12345"))
+#     print("Is real123456 a valid account number?", check_bloom_filter(bloom_filter, hash_functions, "real123456"))
+#     print("Is 12345 a valid account number?", check_bloom_filter(bloom_filter, hash_functions, "12345"))
+
+def expected_fpr(k: int, n: int, N: int) -> float:
+    return float((1.0 - np.exp(-k * n / N)) ** k)
+
+
 if __name__ == "__main__":
-    # This section can be used to debug your submission
 
     nr_bank_accounts = 100_000
+    N = 8 * nr_bank_accounts
 
-    # Create a list of legal bank account numbers
-    real_bank_accounts = ["real" + str(i) for i in range(nr_bank_accounts)]
+    k_opt_float = (N / nr_bank_accounts) * np.log(2.0)
+    k_opt = max(1, int(round(k_opt_float)))
 
-    # Set up the Bloom filter as an array 8 times as big as the number of bank accounts
-    bloom_filter = [0] * 8*nr_bank_accounts
-    # Experiment with 2 hash functions (try raising it to 30)
-    hash_functions = create_hash_functions(2, 8*nr_bank_accounts)
-    # Enter all valid account numbers
-    for account in real_bank_accounts:
-        add_to_bloom_filter(bloom_filter, hash_functions, account)
+    print("[INPUTS]")
+    print(f"  n (real bank accounts): {nr_bank_accounts}")
+    print(f"  N (bloom filter size): {N}")
+    print(f"  k_opt (float): {k_opt_float:.3f} -> rounded: {k_opt}\n")
 
-    # Calulate the false positive rate
-    fake_bank_accounts = ["fake" + str(i) for i in range(nr_bank_accounts)]
+    real_bank_accounts = [f"real{i}" for i in range(nr_bank_accounts)]
+    fake_bank_accounts = [f"fake{i}" for i in range(nr_bank_accounts)]
+
+    print("[RUN] Start k=2..30")
+    print(f"  Sample size(n): {nr_bank_accounts}, Bloom Filter Size: {N}\n")
+
+    best_k = None
+    best_fpr = 1.0
+
+    for k in range(2, 31):
+        bloom = [0] * N
+        custom_hash_functions = create_hash_functions(k, N)
+
+        for real_bank_account in real_bank_accounts:
+            add_to_bloom_filter(bloom, custom_hash_functions, real_bank_account)
+
+        false_positives = 0
+        for fake_bank_account in fake_bank_accounts:
+            if check_bloom_filter(bloom, custom_hash_functions, fake_bank_account):
+                false_positives += 1
+        fpr_meas = false_positives / len(fake_bank_accounts)
+
+        fpr_exp = expected_fpr(k, nr_bank_accounts, N)
+
+        frac_bits_set = float(np.sum(bloom)) / N
+
+        is_tpr_ok = all(check_bloom_filter(bloom, custom_hash_functions, acc) for acc in real_bank_accounts)
+
+        abs_err = fpr_meas - fpr_exp
+        rel_err = (abs_err / fpr_exp * 100.0) if fpr_exp > 0 else float("inf")
+
+        print(
+            f"[RUN] k={k:2d} | bits_set={frac_bits_set:.3f} | "
+            f"FPR_meas={fpr_meas:.6f} vs FPR_exp={fpr_exp:.6f} "
+            f"(abs Δ={abs_err:+.6f}, rel Δ={rel_err:+.2f}%) | TPR==1? {is_tpr_ok}"
+        )
+
+        if fpr_meas < best_fpr:
+            best_fpr = fpr_meas
+            best_k = k
+            print(f"         ↳ New best: k={best_k} with FPR_meas={best_fpr:.6f}")
+
+    print("\n[RUN] Done.")
+    print(f"  Theoretical k_opt (rounded): {k_opt}")
+    print(f"  Best empirical k in [2..30]: {best_k} (FPR_meas ≈ {best_fpr:.6f})")
+
+    k_final = best_k
+    print("\n[FINAL] Build with theoretical k on full dataset")
+    print(f"  Using k={k_final}, N={N}, n={nr_bank_accounts}")
+
+    bloom_filter = [0] * N
+    hash_functions = create_hash_functions(k_final, N)
+
+    step = max(1, nr_bank_accounts // 10)
+    for i, acc in enumerate(real_bank_accounts, 1):
+        add_to_bloom_filter(bloom_filter, hash_functions, acc)
+        if i % step == 0 or i == nr_bank_accounts:
+            print(f"  Inserted {i}/{nr_bank_accounts} ({i / nr_bank_accounts:.0%})")
+
+    # Measured FPR on a subset of fake accounts (for speed)
+    FP_SAMPLE = min(100_000, nr_bank_accounts)
     false_positives = 0
-    for fake_account in fake_bank_accounts:
-        if check_bloom_filter(bloom_filter, hash_functions, fake_account):
-            false_positives += 1 
-    print(f"False positive rate: {false_positives/nr_bank_accounts}")
+    for acc in fake_bank_accounts[:FP_SAMPLE]:
+        if check_bloom_filter(bloom_filter, hash_functions, acc):
+            false_positives += 1
+    fpr_meas_final = false_positives / FP_SAMPLE
 
-    print("Fraction of bits set: ", np.sum(bloom_filter)/(nr_bank_accounts*8))
-        
-    print("Is real12345 a valid account number?", check_bloom_filter(bloom_filter, hash_functions, "real12345"))
-    print("Is real123456 a valid account number?", check_bloom_filter(bloom_filter, hash_functions, "real123456"))
-    print("Is 12345 a valid account number?", check_bloom_filter(bloom_filter, hash_functions, "12345"))
+    # Expected FPR for full dataset with k_final
+    fpr_exp_full = expected_fpr(k_final, nr_bank_accounts, N)
+
+    frac_bits_set_full = float(np.sum(bloom_filter)) / N
+    tpr_ok_final = all(
+        check_bloom_filter(bloom_filter, hash_functions, acc)
+        for acc in real_bank_accounts[:min(10_000, nr_bank_accounts)]
+    )
+
+    abs_err_final = fpr_meas_final - fpr_exp_full
+    rel_err_final = (abs_err_final / fpr_exp_full * 100.0) if fpr_exp_full > 0 else float("inf")
+
+    print("\n[FINAL] Results")
+    print(f"  k used: {k_final}")
+    print(f"  FPR_meas={fpr_meas_final:.6f} vs FPR_exp={fpr_exp_full:.6f} "
+          f"(abs Δ={abs_err_final:+.6f}, rel Δ={rel_err_final:+.2f}%)")
+    print(f"  Fraction of bits set: {frac_bits_set_full:.6f}")
+    print(f"  TPR==1 on first 10k reals? {tpr_ok_final}\n")
+
+    # Example queries
+    print("[QUERIES]")
+    print("  Is real12345 a valid account number?",
+          check_bloom_filter(bloom_filter, hash_functions, "real12345"))
+    print("  Is real123456 a valid account number?",
+          check_bloom_filter(bloom_filter, hash_functions, "real123456"))
+    print("  Is 12345 a valid account number?",
+          check_bloom_filter(bloom_filter, hash_functions, "12345"))
